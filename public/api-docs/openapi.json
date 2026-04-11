@@ -1,0 +1,712 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Parkly API",
+    "description": "REST API for the Parkly mobile parking application.\n\n**Authentication:** Protected endpoints require a Bearer token obtained from `/api/login` or `/api/register`. Click **Authorize** and paste your token.\n\n**Export to Postman:** Download the JSON spec via the link above and import it in Postman → Import → Raw text / File.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    { "url": "http://localhost:8000", "description": "Local (php artisan serve)" },
+    { "url": "http://127.0.0.1:8000", "description": "Local (XAMPP / artisan)" }
+  ],
+  "tags": [
+    { "name": "Auth",          "description": "Register, login, OTP flow, password reset" },
+    { "name": "Parkings",      "description": "Browse, search and find nearest parking locations" },
+    { "name": "Spots",         "description": "Check spot availability for a time range" },
+    { "name": "Bookings",      "description": "Create and manage bookings" },
+    { "name": "Profile",       "description": "Customer profile and photo" },
+    { "name": "Notifications", "description": "In-app notifications" },
+    { "name": "Reviews",       "description": "Submit or update a parking review" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Sanctum API token — obtained from /api/login or /api/register"
+      }
+    },
+    "schemas": {
+      "Customer": {
+        "type": "object",
+        "properties": {
+          "id":            { "type": "integer",  "example": 1 },
+          "name":          { "type": "string",   "example": "Ahmed Hassan" },
+          "email":         { "type": "string",   "format": "email", "example": "ahmed@example.com" },
+          "phone":         { "type": "string",   "example": "+201001234567" },
+          "car_number":    { "type": "string",   "example": "ABC-123" },
+          "gender":        { "type": "string",   "enum": ["male","female"] },
+          "birthday":      { "type": "string",   "format": "date", "example": "1995-06-15" },
+          "profile_photo": { "type": "string",   "nullable": true, "example": "http://localhost:8000/storage/profile_photos/photo.jpg" },
+          "is_blocked":    { "type": "boolean",  "example": false }
+        }
+      },
+      "Parking": {
+        "type": "object",
+        "properties": {
+          "id":             { "type": "integer", "example": 1 },
+          "name":           { "type": "string",  "example": "Downtown Parking" },
+          "address":        { "type": "string",  "example": "123 Main St, Cairo" },
+          "lat":            { "type": "number",  "format": "float", "example": 30.033333 },
+          "lng":            { "type": "number",  "format": "float", "example": 31.233334 },
+          "price_per_hour": { "type": "number",  "format": "float", "example": 15.00 },
+          "service_fee":    { "type": "number",  "format": "float", "example": 5.00 },
+          "image":          { "type": "string",  "nullable": true, "example": "http://localhost:8000/storage/parkings/img.jpg" },
+          "rating":         { "type": "number",  "format": "float", "example": 4.3 },
+          "review_count":   { "type": "integer", "example": 12 }
+        }
+      },
+      "NearestParking": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Parking" },
+          {
+            "type": "object",
+            "properties": {
+              "distance_km": { "type": "number", "format": "float", "example": 1.37, "description": "Straight-line distance in kilometres from the provided lat/lng (Haversine formula)" }
+            }
+          }
+        ]
+      },
+      "Spot": {
+        "type": "object",
+        "properties": {
+          "id":           { "type": "integer" },
+          "parking_id":   { "type": "integer" },
+          "spot_number":  { "type": "string",  "example": "A1" },
+          "type":         { "type": "string",  "enum": ["regular","vip","disabled"] },
+          "status":       { "type": "string",  "enum": ["active","inactive"] },
+          "is_available": { "type": "boolean", "example": true }
+        }
+      },
+      "Booking": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "parking": {
+            "type": "object",
+            "properties": {
+              "id":      { "type": "integer" },
+              "name":    { "type": "string" },
+              "address": { "type": "string" }
+            }
+          },
+          "spot": {
+            "type": "object",
+            "properties": {
+              "id":           { "type": "integer" },
+              "spot_number":  { "type": "string" }
+            }
+          },
+          "start_time":      { "type": "string", "format": "date-time" },
+          "end_time":        { "type": "string", "format": "date-time" },
+          "actual_start_time": { "type": "string", "format": "date-time", "nullable": true },
+          "actual_end_time":   { "type": "string", "format": "date-time", "nullable": true },
+          "total_price":       { "type": "number", "format": "float" },
+          "service_fee":       { "type": "number", "format": "float" },
+          "fine_amount":       { "type": "number", "format": "float", "description": "10 EGP per extra hour over booked end time" },
+          "status":            { "type": "string", "enum": ["pending","confirmed","checked_in","completed","cancelled"] },
+          "checked_in":        { "type": "boolean", "description": "True after QR code is scanned at check-in" },
+          "checked_out":       { "type": "boolean", "description": "True after check-out is recorded" },
+          "qr_code_url":       { "type": "string", "nullable": true, "description": "URL to the PNG QR code image" },
+          "payment": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "method":             { "type": "string", "enum": ["visa","mastercard","apple_pay"] },
+              "status":             { "type": "string", "enum": ["pending","completed","failed"] },
+              "card_number_last4":  { "type": "string", "nullable": true, "example": "4242", "description": "Only last 4 digits stored" }
+            }
+          }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "properties": {
+          "id":         { "type": "integer" },
+          "title":      { "type": "string" },
+          "message":    { "type": "string" },
+          "read_at":    { "type": "string", "format": "date-time", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ValidationError": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string", "example": "The given data was invalid." },
+          "errors": {
+            "type": "object",
+            "additionalProperties": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/register": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Register a new customer",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": ["name","email","phone","password","car_number","gender"],
+                "properties": {
+                  "name":       { "type": "string",  "example": "Ahmed Hassan" },
+                  "email":      { "type": "string",  "format": "email", "example": "ahmed@example.com" },
+                  "phone":      { "type": "string",  "example": "+201001234567" },
+                  "password":   { "type": "string",  "minLength": 6, "example": "secret123" },
+                  "car_number": { "type": "string",  "example": "ABC-123" },
+                  "gender":     { "type": "string",  "enum": ["male","female"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Registered successfully",
+            "content": { "application/json": { "schema": { "properties": { "message": { "type": "string" }, "token": { "type": "string" }, "user": { "$ref": "#/components/schemas/Customer" } } } } }
+          },
+          "422": { "description": "Validation error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ValidationError" } } } }
+        }
+      }
+    },
+    "/api/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Login with email, password and car number",
+        "description": "All three fields must match. A blocked account returns 403.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": ["email","password","car_number"],
+                "properties": {
+                  "email":      { "type": "string", "format": "email", "example": "ahmed@example.com" },
+                  "password":   { "type": "string", "example": "secret123" },
+                  "car_number": { "type": "string", "example": "ABC-123" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": { "application/json": { "schema": { "properties": { "message": { "type": "string" }, "token": { "type": "string", "description": "Use this as Bearer token" }, "user": { "$ref": "#/components/schemas/Customer" } } } } }
+          },
+          "403": { "description": "Account is blocked" },
+          "422": { "description": "Invalid credentials" }
+        }
+      }
+    },
+    "/api/logout": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Logout — revokes the current access token",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Logged out successfully" },
+          "401": { "description": "Unauthenticated" }
+        }
+      }
+    },
+    "/api/forgot-password": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Request a 6-digit OTP for password reset",
+        "description": "OTP is valid for 10 minutes. Delivered via email or SMS.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": ["identifier","method"],
+                "properties": {
+                  "identifier": { "type": "string", "example": "ahmed@example.com", "description": "Customer email or phone number" },
+                  "method":     { "type": "string", "enum": ["email","phone"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OTP sent" },
+          "404": { "description": "No account found with that email/phone" },
+          "422": { "description": "Validation error" }
+        }
+      }
+    },
+    "/api/resend-otp": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Resend OTP using the same method",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": ["identifier","method"],
+                "properties": {
+                  "identifier": { "type": "string", "example": "ahmed@example.com" },
+                  "method":     { "type": "string", "enum": ["email","phone"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OTP resent" },
+          "404": { "description": "Account not found" },
+          "422": { "description": "Validation error" }
+        }
+      }
+    },
+    "/api/try-another-way": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Switch OTP delivery method (email ↔ phone)",
+        "description": "Cancels the previous OTP and sends a new one via the alternate method.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": ["identifier","current_method"],
+                "properties": {
+                  "identifier":     { "type": "string", "example": "ahmed@example.com", "description": "The email or phone already used" },
+                  "current_method": { "type": "string", "enum": ["email","phone"], "description": "The method currently in use" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OTP sent via alternate method",
+            "content": { "application/json": { "schema": { "properties": { "message": { "type": "string" }, "new_method": { "type": "string" }, "new_identifier": { "type": "string" } } } } }
+          },
+          "404": { "description": "Account not found" },
+          "422": { "description": "No alternate contact on file" }
+        }
+      }
+    },
+    "/api/verify-otp": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Verify the OTP code",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": ["identifier","method","code"],
+                "properties": {
+                  "identifier": { "type": "string", "example": "ahmed@example.com" },
+                  "method":     { "type": "string", "enum": ["email","phone"] },
+                  "code":       { "type": "string", "minLength": 6, "maxLength": 6, "example": "123456" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OTP verified — proceed to reset password" },
+          "422": { "description": "Invalid or expired OTP" }
+        }
+      }
+    },
+    "/api/reset-password": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Reset password after OTP verification",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": ["identifier","method","code","new_password"],
+                "properties": {
+                  "identifier":   { "type": "string", "example": "ahmed@example.com" },
+                  "method":       { "type": "string", "enum": ["email","phone"] },
+                  "code":         { "type": "string", "example": "123456" },
+                  "new_password": { "type": "string", "minLength": 6, "example": "newpassword" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Password reset successfully" },
+          "404": { "description": "User not found" },
+          "422": { "description": "Invalid or expired OTP" }
+        }
+      }
+    },
+    "/api/parkings/nearest": {
+      "get": {
+        "tags": ["Parkings"],
+        "summary": "Get all parkings sorted by distance (nearest first)",
+        "description": "Uses the Haversine formula to compute the straight-line distance from the provided coordinates to every parking that has lat/lng set, then returns them sorted nearest-first. Only `lat` and `lng` are required — no radius filter, all parkings are always returned.",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "lat",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "number", "format": "float", "minimum": -90, "maximum": 90 },
+            "example": 30.0444,
+            "description": "Latitude of the user's current location"
+          },
+          {
+            "name": "lng",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "number", "format": "float", "minimum": -180, "maximum": 180 },
+            "example": 31.2357,
+            "description": "Longitude of the user's current location"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "All parkings sorted by distance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "lat":   { "type": "number", "format": "float", "example": 30.0444 },
+                    "lng":   { "type": "number", "format": "float", "example": 31.2357 },
+                    "count": { "type": "integer", "example": 5 },
+                    "data":  { "type": "array", "items": { "$ref": "#/components/schemas/NearestParking" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthenticated" },
+          "422": { "description": "Validation error — lat or lng missing / out of range" }
+        }
+      }
+    },
+    "/api/parkings": {
+      "get": {
+        "tags": ["Parkings"],
+        "summary": "List all parkings",
+        "description": "Returns all parkings with computed rating and review_count. Optionally filter by name or address.",
+        "parameters": [
+          { "name": "search", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Filter by name or address (partial match)" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of parkings",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Parking" } } } }
+          }
+        }
+      }
+    },
+    "/api/parkings/{id}": {
+      "get": {
+        "tags": ["Parkings"],
+        "summary": "Get a single parking by ID",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" }, "example": 1 }
+        ],
+        "responses": {
+          "200": { "description": "Parking details", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Parking" } } } },
+          "404": { "description": "Parking not found" }
+        }
+      }
+    },
+    "/api/parkings/{parkingId}/spots/available": {
+      "get": {
+        "tags": ["Spots"],
+        "summary": "Get spots for a parking with availability for a given time window",
+        "description": "Returns all active spots. Each spot includes `is_available: true/false` based on booking overlap check.",
+        "parameters": [
+          { "name": "parkingId",   "in": "path",  "required": true,  "schema": { "type": "integer" } },
+          { "name": "start_time",  "in": "query", "required": true,  "schema": { "type": "string", "format": "date-time" }, "example": "2026-04-15 10:00:00" },
+          { "name": "end_time",    "in": "query", "required": true,  "schema": { "type": "string", "format": "date-time" }, "example": "2026-04-15 12:00:00" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Spots with availability flag",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Spot" } } } }
+          },
+          "422": { "description": "Validation error (missing time params)" }
+        }
+      }
+    },
+    "/api/parkings/{parkingId}/reviews": {
+      "post": {
+        "tags": ["Reviews"],
+        "summary": "Submit or update a review (1–5 stars)",
+        "description": "One review per customer per parking. Submitting again updates the existing rating.",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "parkingId", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": ["rating"],
+                "properties": {
+                  "rating": { "type": "integer", "minimum": 1, "maximum": 5, "example": 4 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Review submitted" },
+          "401": { "description": "Unauthenticated" },
+          "404": { "description": "Parking not found" },
+          "422": { "description": "Validation error" }
+        }
+      }
+    },
+    "/api/bookings": {
+      "get": {
+        "tags": ["Bookings"],
+        "summary": "Get all bookings for the authenticated customer",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "List of bookings", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Booking" } } } } },
+          "401": { "description": "Unauthenticated" }
+        }
+      },
+      "post": {
+        "tags": ["Bookings"],
+        "summary": "Create a new booking",
+        "description": "Validates spot availability, calculates price (price_per_hour × hours + service_fee), generates a QR code PNG, creates payment record (stores only last 4 card digits), and sends a confirmation notification.",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": ["parking_id","spot_id","start_time","end_time","payment_method"],
+                "properties": {
+                  "parking_id":       { "type": "integer", "example": 1 },
+                  "spot_id":          { "type": "integer", "example": 3 },
+                  "start_time":       { "type": "string", "format": "date-time", "example": "2026-04-15 10:00:00" },
+                  "end_time":         { "type": "string", "format": "date-time", "example": "2026-04-15 12:00:00" },
+                  "payment_method":   { "type": "string", "enum": ["visa","mastercard","apple_pay"] },
+                  "name_on_card":     { "type": "string", "example": "Ahmed Hassan",     "description": "Required unless payment_method is apple_pay" },
+                  "card_number":      { "type": "string", "example": "4111111111111111", "description": "Required unless payment_method is apple_pay — only last 4 digits stored" },
+                  "expiration_date":  { "type": "string", "example": "12/28",            "description": "Required unless payment_method is apple_pay" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Booking confirmed",
+            "content": { "application/json": { "schema": { "properties": { "message": { "type": "string" }, "booking": { "$ref": "#/components/schemas/Booking" } } } } }
+          },
+          "401": { "description": "Unauthenticated" },
+          "422": { "description": "Spot not available or validation error" }
+        }
+      }
+    },
+    "/api/bookings/{id}": {
+      "get": {
+        "tags": ["Bookings"],
+        "summary": "Get details of a single booking",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "Booking details", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Booking" } } } },
+          "401": { "description": "Unauthenticated" },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/api/bookings/{id}/checkin": {
+      "post": {
+        "tags": ["Bookings"],
+        "summary": "Check-in by scanning the booking QR code image",
+        "description": "Upload the QR code image file. The server decodes it server-side. Can only be used once — returns 422 if already checked in. Booking must be in `confirmed` status.",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["qr_image"],
+                "properties": {
+                  "qr_image": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The QR code image file (PNG, JPG, etc. max 5 MB)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Check-in successful",
+            "content": { "application/json": { "schema": {
+              "properties": {
+                "message":       { "type": "string", "example": "Check-in successful." },
+                "booking_id":    { "type": "integer" },
+                "checked_in_at": { "type": "string", "format": "date-time" }
+              }
+            }}}
+          },
+          "401": { "description": "Unauthenticated" },
+          "404": { "description": "Booking not found" },
+          "422": { "description": "Invalid QR code / already checked in / booking not confirmed" }
+        }
+      }
+    },
+    "/api/bookings/{id}/checkout": {
+      "post": {
+        "tags": ["Bookings"],
+        "summary": "Check-out (fine applied if leaving late)",
+        "description": "Upload the same QR code image used at check-in. The server decodes it server-side. Uses `now()` as the actual check-out time. Must have checked in first (`status = checked_in`). Can only be used once — returns 422 if already checked out. If the current time exceeds `end_time`, a fine of **10 EGP per extra hour** is applied and a push notification is sent.",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["qr_image"],
+                "properties": {
+                  "qr_image": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The QR code image file (PNG, JPG, etc. max 5 MB)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Check-out successful",
+            "content": { "application/json": { "schema": {
+              "properties": {
+                "message":        { "type": "string", "example": "Check-out successful." },
+                "checked_out_at": { "type": "string", "format": "date-time" },
+                "fine_amount":    { "type": "number", "description": "0 if on time, otherwise 10 EGP × extra hours" }
+              }
+            }}}
+          },
+          "401": { "description": "Unauthenticated" },
+          "404": { "description": "Booking not found" },
+          "422": { "description": "Not checked in yet / already checked out" }
+        }
+      }
+    },
+    "/api/profile": {
+      "get": {
+        "tags": ["Profile"],
+        "summary": "Get the authenticated customer's profile",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Profile data", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Customer" } } } },
+          "401": { "description": "Unauthenticated" }
+        }
+      },
+      "put": {
+        "tags": ["Profile"],
+        "summary": "Update name, email, phone, or birthday",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "name":     { "type": "string",  "example": "Ahmed Hassan" },
+                  "email":    { "type": "string",  "format": "email" },
+                  "phone":    { "type": "string",  "example": "+201001234567" },
+                  "birthday": { "type": "string",  "format": "date", "example": "1995-06-15" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Profile updated", "content": { "application/json": { "schema": { "properties": { "message": { "type": "string" }, "user": { "$ref": "#/components/schemas/Customer" } } } } } },
+          "401": { "description": "Unauthenticated" },
+          "422": { "description": "Validation error" }
+        }
+      }
+    },
+    "/api/profile/photo": {
+      "post": {
+        "tags": ["Profile"],
+        "summary": "Upload a new profile photo",
+        "description": "Replaces the existing photo. Accepted: JPEG, PNG — max 2 MB.",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "required": ["photo"],
+                "properties": {
+                  "photo": { "type": "string", "format": "binary", "description": "Image file — JPEG or PNG, max 2 MB" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Photo uploaded",
+            "content": { "application/json": { "schema": { "properties": { "message": { "type": "string" }, "profile_photo": { "type": "string", "format": "uri" } } } } }
+          },
+          "401": { "description": "Unauthenticated" },
+          "422": { "description": "Invalid or missing file" }
+        }
+      }
+    },
+    "/api/notifications": {
+      "get": {
+        "tags": ["Notifications"],
+        "summary": "Get all notifications for the authenticated customer",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "List of notifications", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Notification" } } } } },
+          "401": { "description": "Unauthenticated" }
+        }
+      }
+    },
+    "/api/notifications/{id}/read": {
+      "post": {
+        "tags": ["Notifications"],
+        "summary": "Mark a notification as read",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "Notification marked as read" },
+          "401": { "description": "Unauthenticated" },
+          "404": { "description": "Notification not found" }
+        }
+      }
+    }
+  }
+}
