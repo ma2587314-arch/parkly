@@ -1,3 +1,4 @@
+HEAD
 <?php
 
 namespace App\Http\Controllers;
@@ -17,3 +18,6 @@ class HardwareController extends Controller
         ], 200);
     }
 }
+
+
+b4e861d9cc0585485b79305c133c59c5d15b8136
