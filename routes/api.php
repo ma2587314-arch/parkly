@@ -50,3 +50,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('notifications', [NotificationController::class, 'index']);
     Route::post('notifications/{id}/read', [NotificationController::class, 'markRead']);
 });
+
+
+use App\Http\Controllers\HardwareController;
+
+Route::post('/hardware/verify-qr', [HardwareController::class, 'verifyQr']);
