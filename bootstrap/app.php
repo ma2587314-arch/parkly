@@ -13,6 +13,12 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
+        $middleware->append(function ($request, $next) {
+            if (env('RAILWAY_ENVIRONMENT_NAME') || app()->environment('production')) {
+                $request->server->set('HTTPS', 'on');
+            }
+            return $next($request);
+        });
         $middleware->alias([
             'super_admin' => \App\Http\Middleware\EnsureSuperAdmin::class,
             'vendor'      => \App\Http\Middleware\EnsureVendor::class,
