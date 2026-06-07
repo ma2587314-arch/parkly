@@ -19,9 +19,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        if (request()->header('x-forwarded-proto') === 'https' || $this->app->environment('production') || env('RAILWAY_ENVIRONMENT_NAME')) {
-            \Illuminate\Support\Facades\URL::forceScheme('https');
-            request()->server->set('HTTPS', 'on');
-        }
+        // Force HTTPS for all generated URLs (fixes Mixed Content / HTTP form action)
+        \Illuminate\Support\Facades\URL::forceScheme('https');
     }
 }

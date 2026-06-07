@@ -14,10 +14,9 @@ class ForceHttps
      */
     public function handle(Request $request, Closure $next)
     {
-        if (env('RAILWAY_ENVIRONMENT_NAME') || app()->environment('production')) {
-            $request->server->set('HTTPS', 'on');
-        }
-
+        // Force the request to be recognized as HTTPS
+        $request->server->set('HTTPS', 'on');
+        
         return $next($request);
     }
 }
